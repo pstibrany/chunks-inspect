@@ -69,10 +69,9 @@ func parseLokiChunk(chunkHeader *ChunkHeader, r io.Reader) (*LokiChunk, error) {
 		return nil, fmt.Errorf("invalid magic number: %0x", num)
 	}
 
-	format := data[4]
-	compression, err := getCompression(format, r)
+	compression, err := getCompression(data[4], data[5])
 	if err != nil {
-		return nil, fmt.Errorf("failed to read compression:", err)
+		return nil, fmt.Errorf("failed to read compression: %w", err)
 	}
 
 	// return &LokiChunk{encoding: compression}, nil
@@ -172,25 +171,19 @@ func readUvarint(prevErr error, buf []byte) (uint64, []byte, error) {
 	return val, buf[n:], nil
 }
 
-func getCompression(format byte, r io.Reader) (Encoding, error) {
+func getCompression(format byte, code byte) (Encoding, error) {
 	if format == 1 {
 		return encGZIP, nil
 	}
 
 	if format == 2 {
-		b := make([]byte, 1)
-		_, err := io.ReadFull(r, b)
-		if err != nil {
-			return encNone, err
-		}
-
 		for _, e := range Encodings {
-			if e.code == int(b[0]) {
+			if e.code == int(code) {
 				return e, nil
 			}
 		}
 
-		return encNone, fmt.Errorf("unknown encoding: %d", b[0])
+		return encNone, fmt.Errorf("unknown encoding: %d", code)
 	}
 
 	return encNone, fmt.Errorf("unknown format: %d", format)

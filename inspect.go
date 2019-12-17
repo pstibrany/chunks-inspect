@@ -54,6 +54,7 @@ func printFile(filename string, printLines bool) {
 	lokiChunk, err := parseLokiChunk(h, f)
 	if err != nil {
 		log.Printf("%s: %v", filename, err)
+		return
 	}
 
 	fmt.Println("Encoding:", lokiChunk.encoding)
