@@ -14,15 +14,16 @@ const format = "2006-01-02 15:04:05.000000 MST"
 var timezone = time.UTC
 
 func main() {
+	blocks := flag.Bool("b", false, "print block details")
 	lines := flag.Bool("l", false, "print log lines")
 	flag.Parse()
 
 	for _, f := range flag.Args() {
-		printFile(f, *lines)
+		printFile(f, *blocks, *lines)
 	}
 }
 
-func printFile(filename string, printLines bool) {
+func printFile(filename string, blockDetails, printLines bool) {
 	f, err := os.Open(filename)
 	if err != nil {
 		log.Printf("%s: %v", filename, err)
@@ -42,9 +43,12 @@ func printFile(filename string, printLines bool) {
 		return
 	}
 
+	fmt.Println()
+	fmt.Println("Chunks file:", filename)
 	fmt.Println("UserID:", h.UserID)
-	fmt.Println("From:", h.From.Time().In(timezone).Format(format))
-	fmt.Println("Through:", h.Through.Time().In(timezone).Format(format))
+	from, through := h.From.Time().In(timezone), h.Through.Time().In(timezone)
+	fmt.Println("From:", from.Format(format))
+	fmt.Println("Through:", through.Format(format), "("+through.Sub(from).String()+")")
 	fmt.Println("Labels:")
 
 	for _, l := range h.Metric {
@@ -58,15 +62,21 @@ func printFile(filename string, printLines bool) {
 	}
 
 	fmt.Println("Encoding:", lokiChunk.encoding)
-	fmt.Println("Found", len(lokiChunk.blocks), "block(s)")
-	fmt.Println()
+	if blockDetails {
+		fmt.Println("Found", len(lokiChunk.blocks), "block(s)")
+		fmt.Println()
+	} else {
+		fmt.Println("Found", len(lokiChunk.blocks), "block(s), use -b to show block details")
+	}
 
 	totalSize := 0
 
 	for ix, b := range lokiChunk.blocks {
-		fmt.Printf("Block %4d: offset: %8x, original length: %6d (stored: %6d, ratio: %0.3g), minT: %v maxT: %v\n",
-			ix, b.dataOffset, b.uncompressedLength, b.dataLength, float64(b.uncompressedLength)/float64(b.dataLength),
-			time.Unix(0, b.minT).In(timezone).Format(format), time.Unix(0, b.maxT).In(timezone).Format(format))
+		if blockDetails {
+			fmt.Printf("Block %4d: offset: %8x, original length: %6d (stored: %6d, ratio: %0.3g), minT: %v maxT: %v\n",
+				ix, b.dataOffset, b.uncompressedLength, b.dataLength, float64(b.uncompressedLength)/float64(b.dataLength),
+				time.Unix(0, b.minT).In(timezone).Format(format), time.Unix(0, b.maxT).In(timezone).Format(format))
+		}
 
 		totalSize += b.uncompressedLength
 
@@ -77,5 +87,5 @@ func printFile(filename string, printLines bool) {
 		}
 	}
 
-	fmt.Println("Total size of uncompressed data:", totalSize, "file size:", si.Size(), "ratio:", fmt.Sprintf("%0.3g\n", float64(totalSize)/float64(si.Size())))
+	fmt.Println("Total size of uncompressed data:", totalSize, "file size:", si.Size(), "ratio:", fmt.Sprintf("%0.3g", float64(totalSize)/float64(si.Size())))
 }
