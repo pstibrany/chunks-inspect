@@ -46,6 +46,9 @@ type LokiChunk struct {
 	encoding Encoding
 
 	blocks []LokiBlock
+
+	metadataChecksum         uint32
+	computedMetadataChecksum uint32
 }
 
 type LokiBlock struct {
@@ -91,6 +94,10 @@ func parseLokiChunk(chunkHeader *ChunkHeader, r io.Reader) (*LokiChunk, error) {
 	metasOffset := binary.BigEndian.Uint64(data[len(data)-8:])
 
 	metadata := data[metasOffset : len(data)-(8+4)]
+
+	metaChecksum := binary.BigEndian.Uint32(data[len(data)-12 : len(data)-8])
+	computedMetaChecksum := crc32.Checksum(metadata, castagnoliTable)
+
 	blocks, n := binary.Uvarint(metadata)
 	if n <= 0 {
 		return nil, fmt.Errorf("failed to read number of blocks")
@@ -98,7 +105,9 @@ func parseLokiChunk(chunkHeader *ChunkHeader, r io.Reader) (*LokiChunk, error) {
 	metadata = metadata[n:]
 
 	lokiChunk := &LokiChunk{
-		encoding: compression,
+		encoding:                 compression,
+		metadataChecksum:         metaChecksum,
+		computedMetadataChecksum: computedMetaChecksum,
 	}
 
 	for ix := 0; ix < int(blocks); ix++ {

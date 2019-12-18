@@ -62,6 +62,12 @@ func printFile(filename string, blockDetails, printLines bool) {
 	}
 
 	fmt.Println("Encoding:", lokiChunk.encoding)
+	fmt.Print("Blocks Metadata Checksum: ", fmt.Sprintf("%08x", lokiChunk.metadataChecksum))
+	if lokiChunk.metadataChecksum == lokiChunk.computedMetadataChecksum {
+		fmt.Println(" OK")
+	} else {
+		fmt.Println(" BAD, computed checksum:", fmt.Sprintf("%08x", lokiChunk.computedMetadataChecksum))
+	}
 	if blockDetails {
 		fmt.Println("Found", len(lokiChunk.blocks), "block(s)")
 		fmt.Println()
