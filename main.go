@@ -73,9 +73,16 @@ func printFile(filename string, blockDetails, printLines bool) {
 
 	for ix, b := range lokiChunk.blocks {
 		if blockDetails {
-			fmt.Printf("Block %4d: offset: %8x, original length: %6d (stored: %6d, ratio: %0.3g), minT: %v maxT: %v\n",
+			cksum := ""
+			if b.storedChecksum == b.computedChecksum {
+				cksum = fmt.Sprintf("%08x OK", b.storedChecksum)
+			} else {
+				cksum = fmt.Sprintf("%08x BAD (computed: %08x)", b.storedChecksum, b.computedChecksum)
+			}
+			fmt.Printf("Block %4d: position: %8d, original length: %6d (stored: %6d, ratio: %.2f), minT: %v maxT: %v, checksum: %s\n",
 				ix, b.dataOffset, b.uncompressedLength, b.dataLength, float64(b.uncompressedLength)/float64(b.dataLength),
-				time.Unix(0, b.minT).In(timezone).Format(format), time.Unix(0, b.maxT).In(timezone).Format(format))
+				time.Unix(0, b.minT).In(timezone).Format(format), time.Unix(0, b.maxT).In(timezone).Format(format),
+				cksum)
 		}
 
 		totalSize += b.uncompressedLength

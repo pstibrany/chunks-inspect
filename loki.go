@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"encoding/binary"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"io/ioutil"
 
@@ -20,6 +21,15 @@ type Encoding struct {
 
 func (e Encoding) String() string {
 	return e.name
+}
+
+// The table gets initialized with sync.Once but may still cause a race
+// with any other use of the crc32 package anywhere. Thus we initialize it
+// before.
+var castagnoliTable *crc32.Table
+
+func init() {
+	castagnoliTable = crc32.MakeTable(crc32.Castagnoli)
 }
 
 var (
@@ -51,6 +61,8 @@ type LokiBlock struct {
 	// parsed rawData
 	entries            []LokiEntry
 	uncompressedLength int
+	storedChecksum     uint32
+	computedChecksum   uint32
 }
 
 type LokiEntry struct {
@@ -102,6 +114,8 @@ func parseLokiChunk(chunkHeader *ChunkHeader, r io.Reader) (*LokiChunk, error) {
 		}
 
 		block.rawData = data[block.dataOffset : block.dataOffset+block.dataLength]
+		block.storedChecksum = binary.BigEndian.Uint32(data[block.dataOffset+block.dataLength : block.dataOffset+block.dataLength+4])
+		block.computedChecksum = crc32.Checksum(block.rawData, castagnoliTable)
 		block.uncompressedLength, block.entries, err = parseLokiBlock(compression, block.rawData)
 		lokiChunk.blocks = append(lokiChunk.blocks, block)
 	}
