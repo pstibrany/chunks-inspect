@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"compress/gzip"
-	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
@@ -57,19 +56,15 @@ type LokiBlock struct {
 	minT       int64  // minimum timestamp, unix nanoseconds
 	maxT       int64  // max timestamp, unix nanoseconds
 
-	dataOffset uint64 // ofset in the data-part of chunks file
-	dataLength uint64 // length of raw data
+	dataOffset uint64 // offset in the data-part of chunks file
 
-	rawData []byte // data as stored in chunk file, compressed
-
-	rawDataDigest          []byte // Digest (sha256) of compressed data
-	uncompressedDataDigest []byte // Digest (sha256) of uncompressed data
+	rawData      []byte // data as stored in chunk file, compressed
+	originalData []byte // data uncompressed from rawData
 
 	// parsed rawData
-	entries            []LokiEntry
-	uncompressedLength int
-	storedChecksum     uint32
-	computedChecksum   uint32
+	entries          []LokiEntry
+	storedChecksum   uint32
+	computedChecksum uint32
 }
 
 type LokiEntry struct {
@@ -120,39 +115,36 @@ func parseLokiChunk(chunkHeader *ChunkHeader, r io.Reader) (*LokiChunk, error) {
 		block.minT, metadata, err = readVarint(err, metadata)
 		block.maxT, metadata, err = readVarint(err, metadata)
 		block.dataOffset, metadata, err = readUvarint(err, metadata)
-		block.dataLength, metadata, err = readUvarint(err, metadata)
+		dataLength := uint64(0)
+		dataLength, metadata, err = readUvarint(err, metadata)
 
 		if err != nil {
 			return nil, err
 		}
 
-		block.rawData = data[block.dataOffset : block.dataOffset+block.dataLength]
-		d := sha256.Sum256(block.rawData)
-		block.rawDataDigest = d[:]
-		block.storedChecksum = binary.BigEndian.Uint32(data[block.dataOffset+block.dataLength : block.dataOffset+block.dataLength+4])
+		block.rawData = data[block.dataOffset : block.dataOffset+dataLength]
+		block.storedChecksum = binary.BigEndian.Uint32(data[block.dataOffset+dataLength : block.dataOffset+dataLength+4])
 		block.computedChecksum = crc32.Checksum(block.rawData, castagnoliTable)
-		block.uncompressedLength, block.entries, block.uncompressedDataDigest, err = parseLokiBlock(compression, block.rawData)
+		block.originalData, block.entries, err = parseLokiBlock(compression, block.rawData)
 		lokiChunk.blocks = append(lokiChunk.blocks, block)
 	}
 
 	return lokiChunk, nil
 }
 
-func parseLokiBlock(compression Encoding, data []byte) (int, []LokiEntry, []byte, error) {
+func parseLokiBlock(compression Encoding, data []byte) ([]byte, []LokiEntry, error) {
 	r, err := compression.readerFn(bytes.NewReader(data))
 	if err != nil {
-		return 0, nil, nil, err
+		return nil, nil, err
 	}
 
 	decompressed, err := ioutil.ReadAll(r)
+	origDecompressed := decompressed
 	if err != nil {
-		return 0, nil, nil, err
+		return nil, nil, err
 	}
 
-	digest := sha256.Sum256(decompressed)
-
 	entries := []LokiEntry(nil)
-	decompressedLen := len(decompressed)
 	for len(decompressed) > 0 {
 		var timestamp int64
 		var lineLength uint64
@@ -160,11 +152,11 @@ func parseLokiBlock(compression Encoding, data []byte) (int, []LokiEntry, []byte
 		timestamp, decompressed, err = readVarint(err, decompressed)
 		lineLength, decompressed, err = readUvarint(err, decompressed)
 		if err != nil {
-			return 0, nil, digest[:], err
+			return origDecompressed, nil, err
 		}
 
 		if len(decompressed) < int(lineLength) {
-			return 0, nil, digest[:], fmt.Errorf("not enough line data, need %d, got %d", lineLength, len(decompressed))
+			return origDecompressed, nil, fmt.Errorf("not enough line data, need %d, got %d", lineLength, len(decompressed))
 		}
 
 		entries = append(entries, LokiEntry{
@@ -175,7 +167,7 @@ func parseLokiBlock(compression Encoding, data []byte) (int, []LokiEntry, []byte
 		decompressed = decompressed[lineLength:]
 	}
 
-	return decompressedLen, entries, digest[:], nil
+	return origDecompressed, entries, nil
 }
 
 func readVarint(prevErr error, buf []byte) (int64, []byte, error) {

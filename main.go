@@ -1,8 +1,10 @@
 package main
 
 import (
+	"crypto/sha256"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
 	"strings"
@@ -16,14 +18,15 @@ var timezone = time.UTC
 func main() {
 	blocks := flag.Bool("b", false, "print block details")
 	lines := flag.Bool("l", false, "print log lines")
+	storeBlocks := flag.Bool("s", false, "store blocks, using input filename, and appending block index to it")
 	flag.Parse()
 
 	for _, f := range flag.Args() {
-		printFile(f, *blocks, *lines)
+		printFile(f, *blocks, *lines, *storeBlocks)
 	}
 }
 
-func printFile(filename string, blockDetails, printLines bool) {
+func printFile(filename string, blockDetails, printLines, storeBlocks bool) {
 	f, err := os.Open(filename)
 	if err != nil {
 		log.Printf("%s: %v", filename, err)
@@ -88,20 +91,34 @@ func printFile(filename string, blockDetails, printLines bool) {
 				cksum = fmt.Sprintf("%08x BAD (computed: %08x)", b.storedChecksum, b.computedChecksum)
 			}
 			fmt.Printf("Block %4d: position: %8d, original length: %6d (stored: %6d, ratio: %.2f), minT: %v maxT: %v, checksum: %s\n",
-				ix, b.dataOffset, b.uncompressedLength, b.dataLength, float64(b.uncompressedLength)/float64(b.dataLength),
+				ix, b.dataOffset, len(b.originalData), len(b.rawData), float64(len(b.originalData))/float64(len(b.rawData)),
 				time.Unix(0, b.minT).In(timezone).Format(format), time.Unix(0, b.maxT).In(timezone).Format(format),
 				cksum)
-			fmt.Printf("Block %4d: digest compressed: %02x, uncompressed: %02x\n", ix, b.rawDataDigest, b.uncompressedDataDigest)
+			fmt.Printf("Block %4d: digest compressed: %02x, original: %02x\n", ix, sha256.Sum256(b.rawData), sha256.Sum256(b.originalData))
 		}
 
-		totalSize += b.uncompressedLength
+		totalSize += len(b.originalData)
 
 		if printLines {
 			for _, l := range b.entries {
 				fmt.Printf("%v\t%s\n", time.Unix(0, l.timestamp).In(timezone).Format(format), strings.TrimSpace(l.line))
 			}
 		}
+
+		if storeBlocks {
+			writeBlockToFile(b.rawData, ix, fmt.Sprintf("%s.block.%d", filename, ix))
+			writeBlockToFile(b.originalData, ix, fmt.Sprintf("%s.original.%d", filename, ix))
+		}
 	}
 
-	fmt.Println("Total size of uncompressed data:", totalSize, "file size:", si.Size(), "ratio:", fmt.Sprintf("%0.3g", float64(totalSize)/float64(si.Size())))
+	fmt.Println("Total size of original data:", totalSize, "file size:", si.Size(), "ratio:", fmt.Sprintf("%0.3g", float64(totalSize)/float64(si.Size())))
+}
+
+func writeBlockToFile(data []byte, blockIndex int, filename string) {
+	err := ioutil.WriteFile(filename, data, 0644)
+	if err != nil {
+		log.Println("Failed to store block", blockIndex, "to file", filename, "due to error:", err)
+	} else {
+		log.Println("Stored block", blockIndex, "to file", filename)
+	}
 }
