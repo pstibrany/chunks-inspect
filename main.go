@@ -45,6 +45,8 @@ func printFile(filename string, blockDetails, printLines bool) {
 
 	fmt.Println()
 	fmt.Println("Chunks file:", filename)
+	fmt.Println("Metadata length:", h.MetadataLength)
+	fmt.Println("Data length:", h.DataLength)
 	fmt.Println("UserID:", h.UserID)
 	from, through := h.From.Time().In(timezone), h.Through.Time().In(timezone)
 	fmt.Println("From:", from.Format(format))
@@ -89,6 +91,7 @@ func printFile(filename string, blockDetails, printLines bool) {
 				ix, b.dataOffset, b.uncompressedLength, b.dataLength, float64(b.uncompressedLength)/float64(b.dataLength),
 				time.Unix(0, b.minT).In(timezone).Format(format), time.Unix(0, b.maxT).In(timezone).Format(format),
 				cksum)
+			fmt.Printf("Block %4d: digest compressed: %02x, uncompressed: %02x\n", ix, b.rawDataDigest, b.uncompressedDataDigest)
 		}
 
 		totalSize += b.uncompressedLength
